@@ -1,0 +1,20 @@
+error: variant field name `conflict` conflicts with internal tag
+ --> tests/ui/conflict/internal-tag-fields.rs:8:9
+  |
+8 | /         #[serde(rename(deserialize = "conflict"))]
+9 | |         x: (),
+  | |_____________^
+
+error: variant field name `conflict` conflicts with internal tag
+  --> tests/ui/conflict/internal-tag-fields.rs:18:9
+   |
+18 | /         #[serde(rename = "conflict")]
+19 | |         x: (),
+   | |_____________^
+
+error: variant field name `conflict` conflicts with internal tag
+  --> tests/ui/conflict/internal-tag-fields.rs:22:9
+   |
+22 | /         #[serde(rename = "conflict")]
+23 | |         y: (),
+   | |_____________^

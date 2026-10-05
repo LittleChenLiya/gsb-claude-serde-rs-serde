@@ -774,6 +774,141 @@ fn test_rename_enum() {
     );
 }
 
+// A name that is occupied in only one direction may be reused in that
+// direction by a variant that is skipped there: skip_serializing and
+// skip_deserializing each exclude a variant from their own direction's
+// namespace only.
+#[derive(Debug, PartialEq, Serialize, Deserialize)]
+enum SkipDirectionNames {
+    #[serde(rename(serialize = "dup"))]
+    SerOnly,
+    #[serde(
+        rename(serialize = "dup", deserialize = "SkippedSer"),
+        skip_serializing
+    )]
+    SkippedSer,
+    #[serde(rename(deserialize = "dup"))]
+    DeOnly,
+    #[serde(
+        rename(serialize = "SkippedDe", deserialize = "dup"),
+        skip_deserializing
+    )]
+    SkippedDe,
+}
+
+#[test]
+fn test_variant_name_skip_directions() {
+    assert_ser_tokens(
+        &SkipDirectionNames::SerOnly,
+        &[Token::UnitVariant {
+            name: "SkipDirectionNames",
+            variant: "dup",
+        }],
+    );
+
+    assert_de_tokens(
+        &SkipDirectionNames::DeOnly,
+        &[Token::UnitVariant {
+            name: "SkipDirectionNames",
+            variant: "dup",
+        }],
+    );
+
+    assert_de_tokens(
+        &SkipDirectionNames::SkippedSer,
+        &[Token::UnitVariant {
+            name: "SkipDirectionNames",
+            variant: "SkippedSer",
+        }],
+    );
+
+    assert_ser_tokens(
+        &SkipDirectionNames::SkippedDe,
+        &[Token::UnitVariant {
+            name: "SkipDirectionNames",
+            variant: "SkippedDe",
+        }],
+    );
+}
+
+// In an untagged enum the variant names never appear in the data, so
+// colliding renames are harmless and remain accepted.
+#[derive(Debug, PartialEq, Serialize, Deserialize)]
+#[serde(untagged)]
+enum UntaggedDuplicateNames {
+    #[serde(rename = "dup")]
+    First(i32),
+    #[serde(rename = "dup")]
+    Second(i64),
+}
+
+#[test]
+fn test_untagged_duplicate_variant_names() {
+    assert_tokens(&UntaggedDuplicateNames::First(1), &[Token::I32(1)]);
+    assert_ser_tokens(&UntaggedDuplicateNames::Second(1), &[Token::I64(1)]);
+    // Out of range for the first variant, so deserialization falls through
+    // to the second one.
+    assert_de_tokens(
+        &UntaggedDuplicateNames::Second(i64::from(i32::MAX) + 1),
+        &[Token::I64(i64::from(i32::MAX) + 1)],
+    );
+}
+
+// Variants with custom (de)serialization logic are undecidable for the
+// derive's name conflict pre-check and are exempt from it.
+fn ser_custom<S>(value: &i32, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    serializer.serialize_i32(*value)
+}
+
+fn de_custom<'de, D>(deserializer: D) -> Result<i32, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    i32::deserialize(deserializer)
+}
+
+#[derive(Debug, PartialEq, Serialize, Deserialize)]
+enum CustomLogicDuplicateNames {
+    #[serde(
+        rename = "dup",
+        serialize_with = "ser_custom",
+        deserialize_with = "de_custom"
+    )]
+    Custom(i32),
+    #[serde(rename = "dup")]
+    Plain(i32),
+}
+
+#[test]
+fn test_custom_logic_duplicate_variant_names() {
+    // The name `dup` dispatches to the first matching variant, whose custom
+    // logic is free to interpret the data however it wants.
+    assert_tokens(
+        &CustomLogicDuplicateNames::Custom(1),
+        &[
+            Token::NewtypeVariant {
+                name: "CustomLogicDuplicateNames",
+                variant: "dup",
+            },
+            Token::I32(1),
+        ],
+    );
+
+    assert_ser_tokens(
+        &CustomLogicDuplicateNames::Plain(1),
+        &[
+            Token::NewtypeVariant {
+                name: "CustomLogicDuplicateNames",
+                variant: "dup",
+            },
+            Token::I32(1),
+        ],
+    );
+}
+
 #[test]
 fn test_unknown_field_rename_enum() {
     assert_de_tokens_error::<AliasEnum>(

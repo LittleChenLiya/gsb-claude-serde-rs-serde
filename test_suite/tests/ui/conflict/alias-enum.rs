@@ -8,7 +8,7 @@ enum E {
         #[serde(alias = "a", alias = "b", alias = "c")]
         a: (),
 
-        // Warning on "c" and "b"
+        // Error on "c" and "b"
         #[serde(alias = "c")]
         b: (),
 
@@ -20,7 +20,7 @@ enum E {
         #[serde(alias = "b", alias = "c")]
         a: (),
 
-        // Warning on "c"
+        // Error on "c"
         #[serde(rename = "c")]
         b: (),
     },
@@ -30,7 +30,7 @@ enum E {
         #[serde(alias = "B", alias = "c")]
         a: (),
 
-        // Warning on "b" because this collides with the "B" above after
+        // Error on "b" because this collides with the "B" above after
         // applying rename rules
         b: (),
     },
@@ -41,7 +41,7 @@ enum E1 {
     #[serde(alias = "a", alias = "b", alias = "c")]
     a,
 
-    // Warning on "c" and "b"
+    // Error on "c" and "b"
     #[serde(alias = "c")]
     b,
 
@@ -54,7 +54,7 @@ enum E2 {
     #[serde(alias = "b", alias = "c")]
     a,
 
-    // Warning on "c"
+    // Error on "c"
     #[serde(rename = "c")]
     b,
 }
@@ -65,7 +65,7 @@ enum E3 {
     #[serde(alias = "B", alias = "c")]
     a,
 
-    // Warning on "b" because this collides with the "B" above after applying
+    // Error on "b" because this collides with the "B" above after applying
     // rename rules
     b,
 }

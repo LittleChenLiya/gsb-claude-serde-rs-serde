@@ -1,6 +1,7 @@
-use crate::internals::ast::{Container, Data, Field, Style};
+use crate::internals::ast::{Container, Data, Field, Style, Variant};
 use crate::internals::attr::{Default, Identifier, TagType};
 use crate::internals::{ungroup, Ctxt, Derive};
+use std::collections::BTreeMap;
 use syn::{Member, Type};
 
 // Cross-cutting checks that require looking at more than a single attrs object.
@@ -12,6 +13,7 @@ pub fn check(cx: &Ctxt, cont: &mut Container, derive: Derive) {
     check_flatten(cx, cont);
     check_identifier(cx, cont);
     check_variant_skip_attrs(cx, cont);
+    check_variant_name_conflicts(cx, cont);
     check_internal_tag_field_name_conflict(cx, cont);
     check_adjacent_tag_conflict(cx, cont);
     check_transparent(cx, cont, derive);
@@ -294,9 +296,106 @@ fn check_variant_skip_attrs(cx: &Ctxt, cont: &Container) {
     }
 }
 
+// Two variants of the same enum must not be reachable through the same
+// name on the wire: explicit renames, rename rules and aliases are checked
+// together, in every tagged representation (external, internal and
+// adjacent). Serialization names and deserialization names/aliases are
+// independent namespaces; `skip_serializing` / `skip_deserializing` exclude
+// a variant from only the corresponding direction, never both. Variants
+// with custom `serialize_with` / `deserialize_with` logic are undecidable
+// for serde_derive and are left out of the respective check. Every
+// conflicting variant is reported, not just the first one.
+fn check_variant_name_conflicts(cx: &Ctxt, cont: &Container) {
+    let variants = match &cont.data {
+        Data::Enum(variants) => variants,
+        Data::Struct(_, _) => return,
+    };
+
+    // Variant names never appear in the representation of an untagged enum,
+    // so collisions between them cannot make the format ambiguous.
+    if let TagType::None = cont.attrs.tag() {
+        return;
+    }
+
+    let mut ser_names = BTreeMap::<&str, Vec<&Variant>>::new();
+    let mut de_names = BTreeMap::<&str, Vec<&Variant>>::new();
+
+    for variant in variants {
+        // A variant that is not represented through its name at all (custom
+        // (de)serialization logic, or untagged inside a partially tagged
+        // enum) is undecidable and excluded from the corresponding check.
+        let undecidable_ser = variant.attrs.serialize_with().is_some() || variant.attrs.untagged();
+        let undecidable_de = variant.attrs.deserialize_with().is_some() || variant.attrs.untagged();
+
+        if !undecidable_ser && !variant.attrs.skip_serializing() {
+            ser_names
+                .entry(variant.attrs.name().serialize_name().value.as_str())
+                .or_default()
+                .push(variant);
+        }
+
+        // The `other` variant matches every otherwise unrecognized tag, so
+        // its own name and aliases never take part in the dispatch.
+        if !undecidable_de && !variant.attrs.skip_deserializing() && !variant.attrs.other() {
+            let name = variant.attrs.name();
+            de_names
+                .entry(name.deserialize_name().value.as_str())
+                .or_default()
+                .push(variant);
+            for alias in variant.attrs.aliases() {
+                de_names
+                    .entry(alias.value.as_str())
+                    .or_default()
+                    .push(variant);
+            }
+        }
+    }
+
+    for (name, group) in ser_names {
+        if has_distinct_variants(&group) {
+            for variant in group {
+                cx.error_spanned_by(
+                    variant.original,
+                    format!(
+                        "the serialization name `{}` is used by more than one variant of this enum",
+                        name
+                    ),
+                );
+            }
+        }
+    }
+
+    for (name, group) in de_names {
+        if has_distinct_variants(&group) {
+            for variant in group {
+                cx.error_spanned_by(
+                    variant.original,
+                    format!(
+                        "the deserialization name or alias `{}` is used by more than one variant of this enum",
+                        name
+                    ),
+                );
+            }
+        }
+    }
+}
+
+// True if the group of variants collected for one wire name contains at
+// least two different variants. A single variant may appear more than once
+// in its own group, for example when one of its aliases is spelled the same
+// as its deserialize name; that is redundant but not ambiguous.
+fn has_distinct_variants(group: &[&Variant]) -> bool {
+    match group.split_first() {
+        Some((first, rest)) => rest.iter().any(|v| v.ident != first.ident),
+        None => false,
+    }
+}
+
 // The tag of an internally-tagged struct variant must not be the same as either
 // one of its fields, as this would result in duplicate keys in the serialized
-// output and/or ambiguity in the to-be-deserialized input.
+// output and/or ambiguity in the to-be-deserialized input. Serialization names
+// and deserialization names/aliases are checked separately, according to the
+// skip direction of each field, and every conflicting field is reported.
 fn check_internal_tag_field_name_conflict(cx: &Ctxt, cont: &Container) {
     let variants = match &cont.data {
         Data::Enum(variants) => variants,
@@ -306,13 +405,6 @@ fn check_internal_tag_field_name_conflict(cx: &Ctxt, cont: &Container) {
     let tag = match cont.attrs.tag() {
         TagType::Internal { tag } => tag.as_str(),
         TagType::External | TagType::Adjacent { .. } | TagType::None => return,
-    };
-
-    let diagnose_conflict = || {
-        cx.error_spanned_by(
-            cont.original,
-            format!("variant field name `{}` conflicts with internal tag", tag),
-        );
     };
 
     for variant in variants {
@@ -328,17 +420,31 @@ fn check_internal_tag_field_name_conflict(cx: &Ctxt, cont: &Container) {
                         !(field.attrs.skip_deserializing() || variant.attrs.skip_deserializing());
                     let name = field.attrs.name();
                     let ser_name = name.serialize_name();
+                    let de_name = name.deserialize_name();
+
+                    // Report at most one error per field, even if several of
+                    // its names collide with the tag.
+                    let mut field_conflicts = false;
 
                     if check_ser && ser_name.value == tag {
-                        diagnose_conflict();
-                        return;
+                        field_conflicts = true;
                     }
 
-                    for de_name in field.attrs.aliases() {
-                        if check_de && de_name.value == tag {
-                            diagnose_conflict();
-                            return;
+                    if check_de && de_name.value == tag {
+                        field_conflicts = true;
+                    }
+
+                    for de_alias in field.attrs.aliases() {
+                        if check_de && de_alias.value == tag {
+                            field_conflicts = true;
                         }
+                    }
+
+                    if field_conflicts {
+                        cx.error_spanned_by(
+                            field.original,
+                            format!("variant field name `{}` conflicts with internal tag", tag),
+                        );
                     }
                 }
             }
