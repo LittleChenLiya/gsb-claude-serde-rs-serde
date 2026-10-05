@@ -1,0 +1,6 @@
+error: #[serde(borrow)] cannot be combined with #[serde(skip_deserializing)]: a skipped field is never deserialized and cannot borrow
+ --> tests/ui/borrow-contract/borrow_skip.rs:5:5
+  |
+5 | /     #[serde(borrow, skip_deserializing)]
+6 | |     s: &'a str,
+  | |______________^

@@ -1,0 +1,6 @@
+error: field `cow` does not have lifetime 'b
+ --> tests/ui/borrow-contract/wrong_lifetime.rs:6:5
+  |
+6 | /     #[serde(borrow = "'b")]
+7 | |     cow: Cow<'a, str>,
+  | |_____________________^

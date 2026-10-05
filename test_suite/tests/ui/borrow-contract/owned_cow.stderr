@@ -1,0 +1,6 @@
+error: field `cow` contains Cow<'a, String> which cannot borrow from the deserializer; #[serde(borrow)] only makes Cow<'_, str> and Cow<'_, [u8]> zero-copy
+ --> tests/ui/borrow-contract/owned_cow.rs:6:5
+  |
+6 | /     #[serde(borrow)]
+7 | |     cow: Cow<'a, String>,
+  | |________________________^

@@ -1,5 +1,6 @@
 pub mod ast;
 pub mod attr;
+pub mod borrowck;
 pub mod name;
 
 mod case;
