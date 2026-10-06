@@ -1,6 +1,7 @@
-use crate::internals::ast::{Container, Data, Field, Style};
+use crate::internals::ast::{Container, Data, Field, Style, Variant};
 use crate::internals::attr::{Default, Identifier, TagType};
 use crate::internals::{ungroup, Ctxt, Derive};
+use std::collections::{BTreeMap, BTreeSet};
 use syn::{Member, Type};
 
 // Cross-cutting checks that require looking at more than a single attrs object.
@@ -12,6 +13,7 @@ pub fn check(cx: &Ctxt, cont: &mut Container, derive: Derive) {
     check_flatten(cx, cont);
     check_identifier(cx, cont);
     check_variant_skip_attrs(cx, cont);
+    check_variant_name_conflicts(cx, cont, derive);
     check_internal_tag_field_name_conflict(cx, cont);
     check_adjacent_tag_conflict(cx, cont);
     check_transparent(cx, cont, derive);
@@ -294,6 +296,112 @@ fn check_variant_skip_attrs(cx: &Ctxt, cont: &Container) {
     }
 }
 
+// Two variants of the same enum must not be reachable through the same
+// serialized name: a rename or alias that maps two variants to the same name
+// would silently route the input (or output) of one variant to the other,
+// making one of them unreachable.
+//
+// Serialize names and deserialize names/aliases are checked independently of
+// each other: a `skip_serializing` or `skip_deserializing` only exempts the
+// variant from the corresponding direction, never from both. Variants whose
+// (de)serialization is handled by custom logic that the derive cannot
+// inspect, i.e. `serialize_with` / `deserialize_with`, `untagged` and `other`
+// variants, as well as container-level `into` / `from` / `try_from`
+// conversions, are treated as undecided and left out of the check.
+//
+// Every conflict is reported (spanned at each conflicting variant) before any
+// code is generated, not just the first one.
+fn check_variant_name_conflicts(cx: &Ctxt, cont: &Container, derive: Derive) {
+    let variants = match &cont.data {
+        Data::Enum(variants) => variants,
+        Data::Struct(_, _) => return,
+    };
+
+    // Untagged enums do not use variant names to route input or output, so
+    // there is no name collision to check for.
+    if let TagType::None = cont.attrs.tag() {
+        return;
+    }
+
+    // Container-level conversions replace the generated (de)serialization
+    // with custom logic, so the effective names are undecided.
+    let container_ser_undecided = cont.attrs.type_into().is_some();
+    let container_de_undecided =
+        cont.attrs.type_from().is_some() || cont.attrs.type_try_from().is_some();
+
+    let mut ser_names: BTreeMap<&str, Vec<&Variant>> = BTreeMap::new();
+    let mut de_names: BTreeMap<&str, Vec<&Variant>> = BTreeMap::new();
+
+    for variant in variants {
+        // Untagged variants are routed by content, not by name.
+        if variant.attrs.untagged() {
+            continue;
+        }
+
+        if let Derive::Serialize = derive {
+            if !container_ser_undecided
+                && !variant.attrs.skip_serializing()
+                && variant.attrs.serialize_with().is_none()
+            {
+                ser_names
+                    .entry(&variant.attrs.name().serialize_name().value)
+                    .or_default()
+                    .push(variant);
+            }
+        }
+
+        if let Derive::Deserialize = derive {
+            // An `other` variant matches any input, so its name and aliases
+            // are never used to route input to it.
+            if !container_de_undecided
+                && !variant.attrs.skip_deserializing()
+                && variant.attrs.deserialize_with().is_none()
+                && !variant.attrs.other()
+            {
+                // The deserialize name is also part of `aliases()`; collect
+                // into a set first so a variant never conflicts with itself.
+                let mut names = BTreeSet::new();
+                names.insert(&variant.attrs.name().deserialize_name().value);
+                names.extend(variant.attrs.aliases().iter().map(|alias| &alias.value));
+                for name in names {
+                    de_names.entry(name).or_default().push(variant);
+                }
+            }
+        }
+    }
+
+    diagnose_variant_name_conflicts(cx, ser_names, "serialize");
+    diagnose_variant_name_conflicts(cx, de_names, "deserialize");
+}
+
+fn diagnose_variant_name_conflicts(
+    cx: &Ctxt,
+    names: BTreeMap<&str, Vec<&Variant>>,
+    direction: &str,
+) {
+    for (name, group) in names {
+        if group.len() < 2 {
+            continue;
+        }
+        for (i, variant) in group.iter().enumerate() {
+            let others = group
+                .iter()
+                .enumerate()
+                .filter(|(j, _)| *j != i)
+                .map(|(_, other)| format!("`{}`", other.ident))
+                .collect::<Vec<_>>()
+                .join(", ");
+            cx.error_spanned_by(
+                variant.original,
+                format!(
+                    "variant `{}` has the same {} name `{}` as variant {}",
+                    variant.ident, direction, name, others,
+                ),
+            );
+        }
+    }
+}
+
 // The tag of an internally-tagged struct variant must not be the same as either
 // one of its fields, as this would result in duplicate keys in the serialized
 // output and/or ambiguity in the to-be-deserialized input.
@@ -308,9 +416,9 @@ fn check_internal_tag_field_name_conflict(cx: &Ctxt, cont: &Container) {
         TagType::External | TagType::Adjacent { .. } | TagType::None => return,
     };
 
-    let diagnose_conflict = || {
+    let diagnose_conflict = |field: &Field| {
         cx.error_spanned_by(
-            cont.original,
+            field.original,
             format!("variant field name `{}` conflicts with internal tag", tag),
         );
     };
@@ -321,6 +429,7 @@ fn check_internal_tag_field_name_conflict(cx: &Ctxt, cont: &Container) {
                 if variant.attrs.untagged() {
                     continue;
                 }
+                // Report every conflicting field, not just the first one.
                 for field in &variant.fields {
                     let check_ser =
                         !(field.attrs.skip_serializing() || variant.attrs.skip_serializing());
@@ -330,14 +439,14 @@ fn check_internal_tag_field_name_conflict(cx: &Ctxt, cont: &Container) {
                     let ser_name = name.serialize_name();
 
                     if check_ser && ser_name.value == tag {
-                        diagnose_conflict();
-                        return;
+                        diagnose_conflict(field);
+                        continue;
                     }
 
                     for de_name in field.attrs.aliases() {
                         if check_de && de_name.value == tag {
-                            diagnose_conflict();
-                            return;
+                            diagnose_conflict(field);
+                            break;
                         }
                     }
                 }

@@ -1,0 +1,107 @@
+error: variant `A` has the same deserialize name `common` as variant `B`
+ --> tests/ui/conflict/variant-name.rs:7:5
+  |
+7 | /     #[serde(alias = "common")]
+8 | |     A,
+  | |_____^
+
+error: variant `B` has the same deserialize name `common` as variant `A`
+  --> tests/ui/conflict/variant-name.rs:9:5
+   |
+ 9 | /     #[serde(alias = "common")]
+10 | |     B,
+   | |_____^
+
+error: variant `A` has the same serialize name `same` as variant `B`
+  --> tests/ui/conflict/variant-name.rs:16:5
+   |
+16 | /     #[serde(rename = "same")]
+17 | |     A,
+   | |_____^
+
+error: variant `B` has the same serialize name `same` as variant `A`
+  --> tests/ui/conflict/variant-name.rs:18:5
+   |
+18 | /     #[serde(rename = "same")]
+19 | |     B,
+   | |_____^
+
+error: variant `First` has the same deserialize name `A` as variant `A`
+  --> tests/ui/conflict/variant-name.rs:26:5
+   |
+26 | /     #[serde(rename = "A")]
+27 | |     First,
+   | |_________^
+
+error: variant `A` has the same deserialize name `A` as variant `First`
+  --> tests/ui/conflict/variant-name.rs:28:5
+   |
+28 |     A,
+   |     ^
+
+error: variant `A` has the same deserialize name `same` as variant `B`
+  --> tests/ui/conflict/variant-name.rs:35:5
+   |
+35 | /     #[serde(rename = "same")]
+36 | |     A,
+   | |_____^
+
+error: variant `B` has the same deserialize name `same` as variant `A`
+  --> tests/ui/conflict/variant-name.rs:37:5
+   |
+37 | /     #[serde(rename = "same", skip_serializing)]
+38 | |     B,
+   | |_____^
+
+error: variant `A` has the same deserialize name `x` as variant `B`
+  --> tests/ui/conflict/variant-name.rs:44:5
+   |
+44 | /     #[serde(alias = "x")]
+45 | |     A,
+   | |_____^
+
+error: variant `B` has the same deserialize name `x` as variant `A`
+  --> tests/ui/conflict/variant-name.rs:46:5
+   |
+46 | /     #[serde(alias = "x")]
+47 | |     B,
+   | |_____^
+
+error: variant `C` has the same deserialize name `y` as variant `D`
+  --> tests/ui/conflict/variant-name.rs:48:5
+   |
+48 | /     #[serde(rename = "y")]
+49 | |     C,
+   | |_____^
+
+error: variant `D` has the same deserialize name `y` as variant `C`
+  --> tests/ui/conflict/variant-name.rs:50:5
+   |
+50 | /     #[serde(rename = "y")]
+51 | |     D,
+   | |_____^
+
+error: variant field name `type` conflicts with internal tag
+  --> tests/ui/conflict/variant-name.rs:60:9
+   |
+60 | /         #[serde(rename = "type")]
+61 | |         x: u8,
+   | |_____________^
+
+error: variant field name `type` conflicts with internal tag
+  --> tests/ui/conflict/variant-name.rs:64:9
+   |
+64 | /         #[serde(rename = "type")]
+65 | |         y: u8,
+   | |_____________^
+
+warning: unreachable pattern
+  --> tests/ui/conflict/variant-name.rs:98:22
+   |
+96 |     #[serde(rename = "same", deserialize_with = "custom::deserialize")]
+   |                      ------ matches all the relevant values
+97 |     A(u8),
+98 |     #[serde(rename = "same")]
+   |                      ^^^^^^ no value can reach this
+   |
+   = note: `#[warn(unreachable_patterns)]` (part of `#[warn(unused)]`) on by default

@@ -1,8 +1,57 @@
-error[E0425]: cannot find value `__FAIL__` in this scope
-  --> tests/ui/conflict/alias-enum.rs:74:5
+error: variant `a` has the same deserialize name `b` as variant `b`
+  --> tests/ui/conflict/alias-enum.rs:41:5
    |
-74 |     __FAIL__;
-   |     ^^^^^^^^ not found in this scope
+41 | /     #[serde(alias = "a", alias = "b", alias = "c")]
+42 | |     a,
+   | |_____^
+
+error: variant `b` has the same deserialize name `b` as variant `a`
+  --> tests/ui/conflict/alias-enum.rs:45:5
+   |
+45 | /     #[serde(alias = "c")]
+46 | |     b,
+   | |_____^
+
+error: variant `a` has the same deserialize name `c` as variant `b`
+  --> tests/ui/conflict/alias-enum.rs:41:5
+   |
+41 | /     #[serde(alias = "a", alias = "b", alias = "c")]
+42 | |     a,
+   | |_____^
+
+error: variant `b` has the same deserialize name `c` as variant `a`
+  --> tests/ui/conflict/alias-enum.rs:45:5
+   |
+45 | /     #[serde(alias = "c")]
+46 | |     b,
+   | |_____^
+
+error: variant `a` has the same deserialize name `c` as variant `b`
+  --> tests/ui/conflict/alias-enum.rs:54:5
+   |
+54 | /     #[serde(alias = "b", alias = "c")]
+55 | |     a,
+   | |_____^
+
+error: variant `b` has the same deserialize name `c` as variant `a`
+  --> tests/ui/conflict/alias-enum.rs:58:5
+   |
+58 | /     #[serde(rename = "c")]
+59 | |     b,
+   | |_____^
+
+error: variant `a` has the same deserialize name `B` as variant `b`
+  --> tests/ui/conflict/alias-enum.rs:65:5
+   |
+65 | /     #[serde(alias = "B", alias = "c")]
+66 | |     a,
+   | |_____^
+
+error: variant `b` has the same deserialize name `B` as variant `a`
+  --> tests/ui/conflict/alias-enum.rs:70:5
+   |
+70 |     b,
+   |     ^
 
 warning: unreachable pattern
   --> tests/ui/conflict/alias-enum.rs:13:9
@@ -41,39 +90,3 @@ warning: unreachable pattern
 ...
 35 |         b: (),
    |         ^ no value can reach this
-
-warning: unreachable pattern
-  --> tests/ui/conflict/alias-enum.rs:46:5
-   |
-41 |     #[serde(alias = "a", alias = "b", alias = "c")]
-   |                                  --- matches all the relevant values
-...
-46 |     b,
-   |     ^ no value can reach this
-
-warning: unreachable pattern
-  --> tests/ui/conflict/alias-enum.rs:45:21
-   |
-41 |     #[serde(alias = "a", alias = "b", alias = "c")]
-   |                                               --- matches all the relevant values
-...
-45 |     #[serde(alias = "c")]
-   |                     ^^^ no value can reach this
-
-warning: unreachable pattern
-  --> tests/ui/conflict/alias-enum.rs:58:22
-   |
-54 |     #[serde(alias = "b", alias = "c")]
-   |                                  --- matches all the relevant values
-...
-58 |     #[serde(rename = "c")]
-   |                      ^^^ no value can reach this
-
-warning: unreachable pattern
-  --> tests/ui/conflict/alias-enum.rs:70:5
-   |
-65 |     #[serde(alias = "B", alias = "c")]
-   |                     --- matches all the relevant values
-...
-70 |     b,
-   |     ^ no value can reach this
