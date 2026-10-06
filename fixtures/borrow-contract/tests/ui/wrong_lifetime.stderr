@@ -1,0 +1,6 @@
+error: field `name` does not have lifetime 'b
+ --> tests/ui/wrong_lifetime.rs:7:5
+  |
+7 | /     #[serde(borrow = "'b")]
+8 | |     name: &'a str,
+  | |_________________^

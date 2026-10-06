@@ -1,0 +1,12 @@
+[package]
+name = "borrow-contract-fixture"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+serde = { path = "../../serde", features = ["derive"] }
+
+[dev-dependencies]
+serde_json = "1"
+trybuild = { version = "1.0.116", features = ["diff"] }

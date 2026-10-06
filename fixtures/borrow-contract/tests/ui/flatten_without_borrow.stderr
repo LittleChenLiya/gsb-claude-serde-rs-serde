@@ -1,0 +1,6 @@
+error: #[serde(flatten)] field `extra` has lifetime 'a with no declared borrow source; add #[serde(borrow)] so the flattened member can borrow it from the input
+  --> tests/ui/flatten_without_borrow.rs:12:5
+   |
+12 | /     #[serde(flatten)]
+13 | |     extra: Inner<'a>,
+   | |____________________^

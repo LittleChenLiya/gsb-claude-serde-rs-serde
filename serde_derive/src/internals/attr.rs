@@ -986,6 +986,7 @@ pub struct Field {
     ser_bound: Option<Vec<syn::WherePredicate>>,
     de_bound: Option<Vec<syn::WherePredicate>>,
     borrowed_lifetimes: BTreeSet<syn::Lifetime>,
+    explicit_borrow: bool,
     getter: Option<syn::ExprPath>,
     flatten: bool,
     transparent: bool,
@@ -1032,6 +1033,7 @@ impl Field {
         let mut ser_bound = Attr::none(cx, BOUND);
         let mut de_bound = Attr::none(cx, BOUND);
         let mut borrowed_lifetimes = Attr::none(cx, BORROW);
+        let mut explicit_borrow = false;
         let mut getter = Attr::none(cx, GETTER);
         let mut flatten = BoolAttr::none(cx, FLATTEN);
 
@@ -1044,6 +1046,7 @@ impl Field {
         };
 
         if let Some(borrow_attribute) = attrs.and_then(|variant| variant.borrow.as_ref()) {
+            explicit_borrow = true;
             if let Ok(borrowable) = borrowable_lifetimes(cx, &ident, field) {
                 if let Some(lifetimes) = &borrow_attribute.lifetimes {
                     for lifetime in lifetimes {
@@ -1144,6 +1147,7 @@ impl Field {
                     ser_bound.set_opt(&meta.path, ser);
                     de_bound.set_opt(&meta.path, de);
                 } else if meta.path == BORROW {
+                    explicit_borrow = true;
                     if meta.input.peek(Token![=]) {
                         // #[serde(borrow = "'a + 'b")]
                         let lifetimes = parse_lit_into_lifetimes(cx, &meta)?;
@@ -1255,6 +1259,7 @@ impl Field {
             ser_bound: ser_bound.get(),
             de_bound: de_bound.get(),
             borrowed_lifetimes,
+            explicit_borrow,
             getter: getter.get(),
             flatten: flatten.get(),
             transparent: false,
@@ -1317,6 +1322,13 @@ impl Field {
 
     pub fn borrowed_lifetimes(&self) -> &BTreeSet<syn::Lifetime> {
         &self.borrowed_lifetimes
+    }
+
+    /// Whether `#[serde(borrow ...)]` was written explicitly on this field or
+    /// on its newtype variant, as opposed to lifetimes that are borrowed
+    /// implicitly by `&str` and `&[u8]` fields without any attribute.
+    pub fn explicit_borrow(&self) -> bool {
+        self.explicit_borrow
     }
 
     pub fn getter(&self) -> Option<&syn::ExprPath> {
@@ -1606,7 +1618,7 @@ fn is_implicitly_borrowed_reference(ty: &syn::Type) -> bool {
 //         #[serde(borrow)]
 //         cow: Cow<'a, str>,
 //     }
-fn is_cow(ty: &syn::Type, elem: fn(&syn::Type) -> bool) -> bool {
+pub(crate) fn is_cow(ty: &syn::Type, elem: fn(&syn::Type) -> bool) -> bool {
     let path = match ungroup(ty) {
         syn::Type::Path(ty) => &ty.path,
         _ => {
@@ -1681,11 +1693,11 @@ fn is_reference(ty: &syn::Type, elem: fn(&syn::Type) -> bool) -> bool {
     }
 }
 
-fn is_str(ty: &syn::Type) -> bool {
+pub(crate) fn is_str(ty: &syn::Type) -> bool {
     is_primitive_type(ty, "str")
 }
 
-fn is_slice_u8(ty: &syn::Type) -> bool {
+pub(crate) fn is_slice_u8(ty: &syn::Type) -> bool {
     match ungroup(ty) {
         syn::Type::Slice(ty) => is_primitive_type(&ty.elem, "u8"),
         _ => false,
@@ -1721,7 +1733,10 @@ fn borrowable_lifetimes(
     let mut lifetimes = BTreeSet::new();
     collect_lifetimes(&field.ty, &mut lifetimes);
     if lifetimes.is_empty() {
-        let msg = format!("field `{}` has no lifetimes to borrow", name);
+        let msg = format!(
+            "field `{}` has an owned type with no lifetimes to borrow; #[serde(borrow)] cannot make owned deserialization zero-copy",
+            name,
+        );
         cx.error_spanned_by(field, msg);
         Err(())
     } else {
@@ -1729,7 +1744,7 @@ fn borrowable_lifetimes(
     }
 }
 
-fn collect_lifetimes(ty: &syn::Type, out: &mut BTreeSet<syn::Lifetime>) {
+pub(crate) fn collect_lifetimes(ty: &syn::Type, out: &mut BTreeSet<syn::Lifetime>) {
     match ty {
         #![cfg_attr(all(test, exhaustive), deny(non_exhaustive_omitted_patterns))]
         syn::Type::Slice(ty) => {

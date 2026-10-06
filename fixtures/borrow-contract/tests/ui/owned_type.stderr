@@ -1,0 +1,6 @@
+error: field `name` has an owned type with no lifetimes to borrow; #[serde(borrow)] cannot make owned deserialization zero-copy
+ --> tests/ui/owned_type.rs:7:5
+  |
+7 | /     #[serde(borrow)]
+8 | |     name: String,
+  | |________________^

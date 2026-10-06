@@ -1,4 +1,4 @@
-error: field `s` has no lifetimes to borrow
+error: field `s` has an owned type with no lifetimes to borrow; #[serde(borrow)] cannot make owned deserialization zero-copy
  --> tests/ui/borrow/no_lifetimes.rs:5:5
   |
 5 | /     #[serde(borrow)]

@@ -1,6 +1,6 @@
 use crate::internals::ast::{Container, Data, Field, Style};
 use crate::internals::attr::{Default, Identifier, TagType};
-use crate::internals::{ungroup, Ctxt, Derive};
+use crate::internals::{borrow, ungroup, Ctxt, Derive};
 use syn::{Member, Type};
 
 // Cross-cutting checks that require looking at more than a single attrs object.
@@ -16,6 +16,7 @@ pub fn check(cx: &Ctxt, cont: &mut Container, derive: Derive) {
     check_adjacent_tag_conflict(cx, cont);
     check_transparent(cx, cont, derive);
     check_from_and_try_from(cx, cont);
+    borrow::check_borrow_contract(cx, cont, derive);
 }
 
 // If some field of a tuple struct is marked #[serde(default)] then all fields

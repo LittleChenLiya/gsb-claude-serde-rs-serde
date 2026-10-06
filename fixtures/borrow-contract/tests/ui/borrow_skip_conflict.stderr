@@ -1,0 +1,6 @@
+error: #[serde(borrow)] cannot be combined with #[serde(skip_deserializing)]; a skipped field is never deserialized so there is nothing to borrow
+ --> tests/ui/borrow_skip_conflict.rs:8:5
+  |
+8 | /     #[serde(borrow, skip_deserializing)]
+9 | |     name: Cow<'a, str>,
+  | |______________________^

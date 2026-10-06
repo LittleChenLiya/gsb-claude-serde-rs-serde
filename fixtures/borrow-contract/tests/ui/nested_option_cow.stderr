@@ -1,0 +1,6 @@
+error: #[serde(borrow)] cannot borrow through `Option < Cow < 'a, str > >`; a Cow only borrows from the input when it is the field's top-level type, a nested Cow is always deserialized as owned (not zero-copy)
+ --> tests/ui/nested_option_cow.rs:8:5
+  |
+8 | /     #[serde(borrow)]
+9 | |     name: Option<Cow<'a, str>>,
+  | |______________________________^
