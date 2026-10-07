@@ -1209,6 +1209,40 @@ fn test_enum_skip_all() {
     );
 }
 
+// Regression for the default `EnumAccess` data flow (the existing serde_test
+// interface): unknown tag and bad payload keep Serde's own error category
+// and candidate list, exactly as before the error-location work was added in
+// the path-tracking test format.
+#[test]
+fn test_enum_external_regression() {
+    // Unknown externally attached tag nested inside a sequence: the
+    // `unknown_variant` category carries the actual tag and the full
+    // candidate list, unchanged.
+    assert_de_tokens_error::<Vec<Enum>>(
+        &[
+            Token::Seq { len: Some(1) },
+            Token::UnitVariant {
+                name: "Enum",
+                variant: "Foo",
+            },
+        ],
+        "unknown variant `Foo`, expected one of `Unit`, `Simple`, `Seq`, `Map`, `SimpleWithSkipped`",
+    );
+
+    // Known tag with a bad payload: ordinary `custom` category (invalid type),
+    // produced while the newtype variant value is being decoded.
+    assert_de_tokens_error::<Enum>(
+        &[
+            Token::NewtypeVariant {
+                name: "Enum",
+                variant: "Simple",
+            },
+            Token::Bool(false),
+        ],
+        "invalid type: boolean `false`, expected i32",
+    );
+}
+
 #[test]
 fn test_duplicate_field_struct() {
     assert_de_tokens_error::<Struct>(
